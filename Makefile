@@ -164,6 +164,8 @@ UPROGS=\
 	$U/_zombie\
 	$U/_waittest\
 	$U/_exittest\
+	$U/_yieldtest\
+	$U/_seccomptest\
 
 
 ifeq ($(LAB),trap)

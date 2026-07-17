@@ -24,6 +24,9 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int rename(const char*);
+int yield(void);
+int seccomp_ctl(int, uint64);
+int seccomp_getlog(uint64*, int*);
 
 // ulib.c
 int stat(const char*, struct stat*);
