@@ -94,6 +94,8 @@ static int
 student_restore_kv(struct ai_session *session, int request,
                    struct kv_entry *kv, struct ai_io *io)
 {
+  if(session->state[0])
+    return ai_student_prefetch_restore(session, request, kv, io);
   return ai_student_kv_restore(session, request, kv, io);
 }
 

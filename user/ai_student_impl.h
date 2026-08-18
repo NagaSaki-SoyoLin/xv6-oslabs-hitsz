@@ -21,6 +21,8 @@ void ai_student_kv_end(struct ai_session *);
 int ai_student_prefetch_begin(struct ai_session *);
 int ai_student_prefetch_next(struct ai_session *, int);
 int ai_student_prefetch_wait(struct ai_session *, int);
+int ai_student_prefetch_restore(struct ai_session *, int, struct kv_entry *,
+                                struct ai_io *);
 void ai_student_prefetch_end(struct ai_session *);
 
 #endif

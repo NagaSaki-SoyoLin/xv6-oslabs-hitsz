@@ -31,6 +31,19 @@ ai_student_prefetch_wait(struct ai_session *session, int request)
   return -1;
 }
 
+int
+ai_student_prefetch_restore(struct ai_session *session, int request,
+                            struct kv_entry *kv, struct ai_io *io)
+{
+  // TODO(LAB3-AI，选做)：把已由辅助进程从磁盘读取的完整记录交给父 worker。
+  // 这次恢复仍必须对应一次真实文件读取，并且只在完整交付后累计 KV 字节数。
+  (void)session;
+  (void)request;
+  (void)kv;
+  (void)io;
+  return -1;
+}
+
 void
 ai_student_prefetch_end(struct ai_session *session)
 {

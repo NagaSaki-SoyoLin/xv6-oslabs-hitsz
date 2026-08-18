@@ -14,6 +14,7 @@
 #define AI_VOCAB 32
 #define AI_DIM 8
 #define AI_KV_TOKENS 32
+#define AI_ATTENTION_ROUNDS 32
 #define AI_MAX_WORKERS 3
 #define AI_MAX_REQUESTS 24
 

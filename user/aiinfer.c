@@ -203,17 +203,26 @@ decode_request(int request, struct kv_entry *kv)
   int best_index = 0;
   int score;
   uint result = workspace.partial[request];
+  int round;
   int step;
   int dim;
 
-  for(step = 0; step < AI_KV_TOKENS; step++) {
-    score = 0;
-    for(dim = 0; dim < AI_DIM; dim++)
-      score += workspace.query[request][dim] * kv[step].key[dim];
-    if(score > best_score) {
-      best_score = score;
-      best_index = step;
+  // 重复少量 attention-style 计算，模拟 decode 的 CPU 工作量，也给选做
+  // prefetch 留出与下一条 KV 磁盘读取重叠的时间。
+  for(round = 0; round < AI_ATTENTION_ROUNDS; round++) {
+    best_score = -2147483647;
+    best_index = 0;
+    for(step = 0; step < AI_KV_TOKENS; step++) {
+      score = 0;
+      for(dim = 0; dim < AI_DIM; dim++)
+        score += workspace.query[request][dim] * kv[step].key[dim];
+      score += round & 1;
+      if(score > best_score) {
+        best_score = score;
+        best_index = step;
+      }
     }
+    result = result * 17 + (uint)best_score;
   }
   for(dim = 0; dim < AI_DIM; dim++)
     result = result * 17 + kv[best_index].value[dim];
