@@ -229,7 +229,8 @@ endif
 ifeq ($(LAB),lock)
 UPROGS += \
 	$U/_kalloctest\
-	$U/_bcachetest
+	$U/_bcachetest\
+	$U/_modelprep
 endif
 
 ifeq ($(LAB),fs)
