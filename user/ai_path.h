@@ -43,6 +43,7 @@ struct ai_path {
   int (*end_kv_write)(struct ai_session *);
   int (*begin_kv_read)(struct ai_session *);
   int (*prefetch_next)(struct ai_session *, int);
+  int (*prefetch_wait)(struct ai_session *, int);
   int (*restore_kv)(struct ai_session *, int, struct kv_entry *, struct ai_io *);
   void (*end)(struct ai_session *);
 };

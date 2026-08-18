@@ -19,6 +19,8 @@ user/usys.S
 myapi.key
 *-handin.tar.gz
 xv6.out*
+ai-*.out*
+__pycache__/
 .vagrant/
 submissions/
 ph

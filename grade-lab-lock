@@ -4,6 +4,7 @@ import re
 from gradelib import *
 
 r = Runner(save("xv6.out"))
+ai = Runner(save("ai-functional.out"))
 
 @test(0, "running kalloctest")
 def test_kalloctest():
@@ -19,7 +20,7 @@ def test_kalloctest_test1():
 def test_kalloctest_test2():
     r.match('^test2 OK$')
     
-@test(10, "kalloctest: sbrkmuch")
+@test(5, "kalloctest: sbrkmuch")
 def test_sbrkmuch():
     r.run_qemu(shell_script([
         'usertests sbrkmuch'
@@ -32,7 +33,7 @@ def test_bcachetest():
         'bcachetest'
     ]), timeout=90)
     
-@test(10, "bcachetest: test0", parent=test_bcachetest)
+@test(15, "bcachetest: test0", parent=test_bcachetest)
 def test_bcachetest_test0():
     r.match('^test0: OK$')
     
@@ -40,12 +41,33 @@ def test_bcachetest_test0():
 def test_bcachetest_test1():
     r.match('^test1 OK$')
 
-@test(19, "usertests")
+@test(4, "usertests")
 def test_usertests():
     r.run_qemu(shell_script([
         'usertests'
     ]), timeout=300)
     r.match('^ALL TESTS PASSED$')
+
+@test(0, "运行 AI 功能与等价性测试")
+def test_ai_functional():
+    ai.run_qemu(shell_script([
+        'modelprep',
+        'aimodeltest',
+        'aikvtest',
+        'aiinfer compare -w 2 -r 6',
+    ]), timeout=240)
+
+@test(10, "AI 模型与 embedding 加载", parent=test_ai_functional)
+def test_ai_model():
+    ai.match(r'^AIMODELTEST: verify OK shards=74 checksum=[1-9][0-9]*$')
+
+@test(10, "AI KV 持久化与恢复", parent=test_ai_functional)
+def test_ai_kv():
+    ai.match(r'^AIKVTEST: verify OK requests=4 bytes=[1-9][0-9]*$')
+
+@test(10, "AI 多 worker 输出等价", parent=test_ai_functional)
+def test_ai_compare():
+    ai.match(r'^AIINFER_COMPARE: verify OK checksum=[1-9][0-9]*$')
 
 @test(1, "time")
 def test_time():

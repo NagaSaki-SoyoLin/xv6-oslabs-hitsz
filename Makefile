@@ -157,6 +157,24 @@ $U/_forktest: $U/forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_forktest $U/forktest.o $U/ulib.o $U/usys.o
 	$(OBJDUMP) -S $U/_forktest > $U/forktest.asm
 
+AI_STUDENT_OBJS = $U/ai_student.o $U/ai_student_model.o \
+	$U/ai_student_kv.o $U/ai_student_prefetch.o
+
+$U/_aiinfer: $U/aiinfer.o $U/ai_baseline.o $(AI_STUDENT_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(OBJDUMP) -S $@ > $U/aiinfer.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $U/aiinfer.sym
+
+$U/_aimodeltest: $U/aimodeltest.o $U/ai_student_model.o $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(OBJDUMP) -S $@ > $U/aimodeltest.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $U/aimodeltest.sym
+
+$U/_aikvtest: $U/aikvtest.o $U/ai_student_kv.o $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(OBJDUMP) -S $@ > $U/aikvtest.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $U/aikvtest.sym
+
 mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 	gcc $(XCFLAGS) -Werror -Wall -I. -o mkfs/mkfs mkfs/mkfs.c
 
@@ -230,7 +248,10 @@ ifeq ($(LAB),lock)
 UPROGS += \
 	$U/_kalloctest\
 	$U/_bcachetest\
-	$U/_modelprep
+	$U/_modelprep\
+	$U/_aimodeltest\
+	$U/_aikvtest\
+	$U/_aiinfer
 endif
 
 ifeq ($(LAB),fs)

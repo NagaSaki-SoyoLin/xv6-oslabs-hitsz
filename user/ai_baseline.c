@@ -131,6 +131,14 @@ baseline_prefetch_next(struct ai_session *session, int request)
 }
 
 static int
+baseline_prefetch_wait(struct ai_session *session, int request)
+{
+  (void)session;
+  (void)request;
+  return 0;
+}
+
+static int
 baseline_restore_kv(struct ai_session *session, int request,
                     struct kv_entry *kv, struct ai_io *io)
 {
@@ -175,6 +183,7 @@ struct ai_path ai_baseline_path = {
   .end_kv_write = baseline_end_kv_write,
   .begin_kv_read = baseline_begin_kv_read,
   .prefetch_next = baseline_prefetch_next,
+  .prefetch_wait = baseline_prefetch_wait,
   .restore_kv = baseline_restore_kv,
   .end = baseline_end,
 };
