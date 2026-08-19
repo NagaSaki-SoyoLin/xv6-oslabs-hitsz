@@ -1,6 +1,8 @@
 #ifndef XV6_AI_ASSETS_H
 #define XV6_AI_ASSETS_H
 
+// 这些常量定义了教学 workload 的固定数据规模。规模小到可以在 xv6
+// CPU 环境运行，但仍会让模型、embedding、KV 和文件系统路径产生真实访问。
 #define AI_MAGIC 0x41494c33U
 #define AI_VERSION 3U
 
@@ -23,6 +25,7 @@
 #define AI_STREAM_NAME_LEN 5
 
 struct ai_manifest {
+  // aimeta 是 modelprep 最后写入的清单；aiinfer 先验证它，再开始 worker。
   uint magic;
   uint version;
   uint model_shards;
@@ -31,8 +34,8 @@ struct ai_manifest {
   uint checksum;
 };
 
-// 文件内容由确定性函数生成，便于在不同机器上验证相同输入。
-// 被测推理链路仍必须从 xv6 文件系统读取这些字节。
+// 文件内容由确定性函数生成，便于在不同机器上验证相同输入。modelprep
+// 可以调用它制作文件，但被测推理链路仍必须从 xv6 文件系统读取这些字节。
 static inline uchar
 ai_byte(uint family, uint shard, uint offset)
 {
@@ -42,6 +45,8 @@ ai_byte(uint family, uint shard, uint offset)
 static inline uint
 ai_checksum_step(uint checksum, uchar value)
 {
+  // 简单滚动校验和只用于教学验证，不是密码学 hash；输入顺序改变时
+  // 结果也会改变，因此可以检查分片顺序和内容是否一致。
   return checksum * 33 + value;
 }
 
@@ -74,6 +79,7 @@ ai_shard_name(char *name, uint family, uint shard)
 }
 
 // baseline 为每个请求建立独立文件，例如 kvb007 表示 worker 0 的请求 7。
+// 这种命名让恢复简单，但会重复创建、打开和删除许多小文件。
 static inline void
 ai_baseline_kv_name(char *name, int worker, int request)
 {
@@ -86,7 +92,8 @@ ai_baseline_kv_name(char *name, int worker, int request)
   name[6] = 0;
 }
 
-// student/选做通路可按 worker 使用顺序流文件，例如 kvs0。
+// student/选做通路可按 worker 使用顺序流文件，例如 kvs0。文件组织由
+// 学生决定，但不同 worker 的持久化状态必须隔离。
 static inline void
 ai_student_kv_name(char *name, int worker)
 {

@@ -5,7 +5,12 @@
 
 #include "ai_path.h"
 
+// aiinfer 是本实验的端到端 workload。它通过 ai_path 运行 baseline、student
+// 或 prefetch 通路，并在相同的 prefill、KV 生命周期和 decode 计算下比较
+// 正确性与性能。学生通常不修改本文件，而应从这里反推各接口的调用契约。
+
 struct worker_result {
+  // 每个 worker 独立产生逐请求输出、延迟与 I/O；父进程最后统一聚合。
   uint checksum;
   uint output[AI_MAX_REQUESTS];
   uint latency[AI_MAX_REQUESTS];
@@ -13,6 +18,8 @@ struct worker_result {
 };
 
 struct worker_workspace {
+  // workspace 保存无需持久化的推理中间量。真正被测试的 KV 页面不保留在
+  // 这里，而是写盘、释放、重新申请并从文件恢复。
   int query[AI_MAX_REQUESTS][AI_DIM];
   uint partial[AI_MAX_REQUESTS];
   uint kv_checksum[AI_MAX_REQUESTS];
@@ -55,6 +62,7 @@ read_exact_result(int fd, void *buffer, int length)
   char *p = buffer;
   int n;
 
+  // pipe 和文件都是字节流；父子进程传递结果时也必须循环处理短读。
   while(length > 0) {
     n = read(fd, p, length);
     if(n <= 0)
@@ -71,6 +79,7 @@ write_exact_or_fail(int fd, void *buffer, int length)
   char *p = buffer;
   int n;
 
+  // 启动信号和 worker_result 必须完整写入管道，部分消息无法安全解释。
   while(length > 0) {
     n = write(fd, p, length);
     if(n <= 0)
@@ -116,6 +125,8 @@ verify_assets(void)
   struct ai_manifest manifest;
   int fd;
 
+  // aimeta 是模型资产的入口。先验证版本、规模和整体 checksum，避免在
+  // 缺失或过期的分片集合上运行性能测试。
   fd = open("aimeta", O_RDONLY);
   if(fd < 0)
     fail("请先运行 modelprep");
@@ -140,8 +151,11 @@ shard_feature(struct ai_path *path, struct ai_session *session,
   uint feature = 0;
   int offset;
 
+  // workload 只通过 path->load 获取分片：baseline 会每次读文件，student
+  // 可以缓存，但两者交付给后续计算的 1024 字节必须完全相同。
   if(path->load(session, family, shard, block, io) < 0)
     fail("模型或 embedding 分片加载失败");
+  // 再逐字节核验并压缩成一个确定性 feature，使错误尽量在数据入口暴露。
   for(offset = 0; offset < AI_SHARD_BYTES; offset++) {
     if((uchar)block[offset] != ai_byte(family, shard, offset))
       fail("模型或 embedding 分片内容损坏");
@@ -157,6 +171,8 @@ kv_checksum(struct kv_entry *kv)
   uint checksum = 0;
   int offset;
 
+  // checksum 覆盖将要写盘的完整 2048 字节，恢复后再次计算即可确认
+  // 文件 I/O 没有丢字节、错序或交付其他请求的 KV。
   for(offset = 0; offset < AI_KV_FILE_BYTES; offset++)
     checksum = ai_checksum_step(checksum, bytes[offset]);
   return checksum;
@@ -174,7 +190,11 @@ prefill_request(struct ai_path *path, struct ai_session *session,
   int step;
   int dim;
 
+  // 一个请求的延迟从 prefill 开始计时；后续模型读取、KV 写盘、排队、
+  // 恢复和 decode 都包含在该请求的端到端延迟中。
   workspace.begin_tick[request] = uptime();
+  // 每个 token 步骤各读取一个模型分片和 embedding 分片，再生成简化的
+  // key/value。重复访问让模型缓存优化具有可观察收益。
   for(step = 0; step < AI_KV_TOKENS; step++) {
     model_feature = shard_feature(path, session, AI_MODEL_FAMILY,
                                   (request + step) % AI_MODEL_SHARDS, io);
@@ -192,6 +212,8 @@ prefill_request(struct ai_path *path, struct ai_session *session,
     result = result * 33 + model_feature + embed_feature + token;
     token = result % AI_VOCAB;
   }
+  // query 和 partial 属于普通中间状态；KV checksum 则用于验证随后真实
+  // 写盘并恢复的那一页数据，而不是允许保存 KV 副本。
   workspace.partial[request] = result;
   workspace.kv_checksum[request] = kv_checksum(kv);
 }
@@ -207,8 +229,9 @@ decode_request(int request, struct kv_entry *kv)
   int step;
   int dim;
 
-  // 重复少量 attention-style 计算，模拟 decode 的 CPU 工作量，也给选做
-  // prefetch 留出与下一条 KV 磁盘读取重叠的时间。
+  // 对 query 与每条 key 做点积，选择分数最高的 value。这里是简化的
+  // attention-style CPU 计算，不追求真实模型精度，只保留 KV 数据依赖。
+  // 重复若干轮也给选做 prefetch 留出与下一条磁盘读取重叠的时间。
   for(round = 0; round < AI_ATTENTION_ROUNDS; round++) {
     best_score = -2147483647;
     best_index = 0;
@@ -240,6 +263,8 @@ worker_main(struct ai_path *path, int worker, int requests,
   char start;
   int request;
 
+  // 每个子进程拥有独立 session、workspace 和结果。begin 在启动屏障前
+  // 完成初始化，屏障释放后多个 worker 才同时进入被测数据路径。
   memset(&result, 0, sizeof(result));
   memset(&workspace, 0, sizeof(workspace));
   if(path->begin(&session, worker, requests) < 0)
@@ -248,6 +273,8 @@ worker_main(struct ai_path *path, int worker, int requests,
     fail("启动屏障读取失败");
   close(start_fd);
 
+  // 阶段一：prefill 生成 KV，通路把完整记录写入 xv6 文件系统，然后立即
+  // 释放原页面。释放后任何实现都不能依赖旧 kv 指针或内存残留。
   if(path->begin_kv_write(&session) < 0)
     fail("无法开始 KV 写入阶段");
   for(request = 0; request < requests; request++) {
@@ -260,6 +287,7 @@ worker_main(struct ai_path *path, int worker, int requests,
       fail("KV 写盘失败");
     if(result.io.kv_write_bytes - before != AI_KV_FILE_BYTES)
       fail("KV 写入字节数不正确");
+    // store 成功后马上归还页面，强制后面的 decode 使用文件恢复结果。
     if(sbrk(-PGSIZE) == (void *)-1)
       fail("无法释放原 KV 页面");
   }
@@ -268,12 +296,14 @@ worker_main(struct ai_path *path, int worker, int requests,
   if(path->begin_kv_read(&session) < 0)
     fail("无法开始 KV 恢复阶段");
 
+  // 阶段二：首条预取没有前一条 decode 可以重叠，所以循环前先发起并等待。
   if(path->prefetch) {
     if(path->prefetch_next(&session, 0) < 0 ||
        path->prefetch_wait(&session, 0) < 0)
       fail("首条 KV 预取失败");
   }
   for(request = 0; request < requests; request++) {
+    // 重新申请的页面先用固定字节污染，防止“未真正恢复却碰巧校验通过”。
     kv = (struct kv_entry *)sbrk(PGSIZE);
     if(kv == (void *)-1)
       fail("无法重新申请 KV 页面");
@@ -286,6 +316,8 @@ worker_main(struct ai_path *path, int worker, int requests,
     if(kv_checksum(kv) != workspace.kv_checksum[request])
       fail("恢复后的 KV 内容错误");
 
+    // 稳态预取顺序：恢复 i 后发起 i+1，计算 i，最后才等待 i+1。
+    // next 和 wait 之间的 decode 是形成 I/O/计算重叠的关键窗口。
     if(path->prefetch && request + 1 < requests &&
        path->prefetch_next(&session, request + 1) < 0)
       fail("下一条 KV 预取启动失败");
@@ -299,6 +331,7 @@ worker_main(struct ai_path *path, int worker, int requests,
       fail("下一条 KV 预取等待失败");
   }
 
+  // 通路先回收文件、缓存和可选辅助进程，再把完整 worker_result 交给父进程。
   path->end(&session);
   write_exact_or_fail(result_fd, &result, sizeof(result));
   close(result_fd);
@@ -352,6 +385,8 @@ prefix_spins(char *prefix)
   int prefix_length = strlen(prefix);
   uint total = 0;
 
+  // statistics() 返回文本快照。按锁名前缀累加 #fetch-and-add，使学生拆分
+  // 出的 kmem*/bcache* 多把锁仍能归入同一类竞争指标。
   while(*line) {
     end = line;
     while(*end && *end != '\n')
@@ -382,6 +417,7 @@ snapshot_stats(void)
 {
   struct lock_stats result;
 
+  // workload 前后各取一次累计锁统计，run_path 最终使用两次快照的差值。
   memset(stats_buffer, 0, sizeof(stats_buffer));
   if(statistics(stats_buffer, sizeof(stats_buffer) - 1) <= 0)
     fail("无法读取锁统计");
@@ -400,6 +436,7 @@ sort_latencies(uint *latency, int count)
   int i;
   int j;
 
+  // 样本最多只有 3 * 24 个，简单插入排序足够，也避免引入额外库依赖。
   for(i = 1; i < count; i++) {
     value = latency[i];
     j = i;
@@ -437,6 +474,8 @@ run_path(struct ai_path *path, int workers, int requests,
   int total_requests = workers * requests;
   int p95_index;
 
+  // 父进程先为每个 worker 建结果管道，再 fork 子进程。所有 worker 共享
+  // 一条启动管道作为屏障，尽量让文件、内存和锁访问在时间上发生重叠。
   memset(run, 0, sizeof(*run));
   if(pipe(start_pipe) < 0)
     fail("无法创建启动管道");
@@ -446,6 +485,8 @@ run_path(struct ai_path *path, int workers, int requests,
 
   for(worker = 0; worker < workers; worker++) {
     if(fork() == 0) {
+      // 子进程只保留启动读端和属于自己的结果写端；关闭多余端点可以
+      // 避免 EOF 判断失效，也不会耗尽 xv6 很小的 fd 表。
       close(start_pipe[1]);
       for(other = 0; other < workers; other++) {
         close(result_pipe[other][0]);
@@ -460,8 +501,10 @@ run_path(struct ai_path *path, int workers, int requests,
   for(worker = 0; worker < workers; worker++)
     close(result_pipe[worker][1]);
 
+  // 初始化不计入被测区间；快照后一次写入一个启动字节，释放所有 worker。
   before = snapshot_stats();
   run->elapsed_ticks = uptime();
+  // wait 确保所有 worker 完成后再停止计时，elapsed 是整条并发通路时间。
   for(worker = 0; worker < workers; worker++)
     write_exact_or_fail(start_pipe[1], &start, 1);
   close(start_pipe[1]);
@@ -472,6 +515,7 @@ run_path(struct ai_path *path, int workers, int requests,
   if(run->elapsed_ticks <= 0)
     fail("运行时间为零");
 
+  // 收集每个 worker 的完整结果，同时验证 KV I/O 契约并汇总延迟样本。
   for(worker = 0; worker < workers; worker++) {
     if(read_exact_result(result_pipe[worker][0], &run->worker[worker],
                          sizeof(run->worker[worker])) < 0)
@@ -496,6 +540,7 @@ run_path(struct ai_path *path, int workers, int requests,
   run->stats.bcache_spins = after.bcache_spins - before.bcache_spins;
   run->stats.total_spins = after.total_spins - before.total_spins;
 
+  // p95 使用向上取整后的第 ceil(0.95*N) 个样本，数组下标因此再减 1。
   sort_latencies(latency, sample_count);
   p95_index = (total_requests * 95 + 99) / 100 - 1;
   run->p95_ticks = latency[p95_index];
@@ -532,6 +577,8 @@ verify_equal(struct path_result *left, struct path_result *right,
   int worker;
   int request;
 
+  // 汇总 checksum 相同仍可能掩盖两个请求互换，因此 compare 还会逐 worker、
+  // 逐请求检查输出。不同通路可以更改 I/O 组织，但不能更改推理语义。
   if(left->checksum != right->checksum ||
      left->io.kv_write_bytes != right->io.kv_write_bytes ||
      left->io.kv_read_bytes != right->io.kv_read_bytes)
@@ -546,6 +593,8 @@ verify_equal(struct path_result *left, struct path_result *right,
 static void
 compare_paths(int workers, int requests)
 {
+  // baseline 与 student 在独立运行中使用同一 workload；若实现了选做，
+  // prefetch 还必须与 student 等价。性能评分在正确性检查通过后才有意义。
   if(!ai_student_path.implemented)
     fail("任务三和任务四尚未全部完成");
   run_path(&ai_baseline_path, workers, requests, &compare_baseline);
@@ -567,6 +616,8 @@ main(int argc, char *argv[])
   int requests = AI_MAX_REQUESTS;
   int argument;
 
+  // 默认规模固定为 3 worker * 24 请求；-w/-r 只允许缩小到实验上限内，
+  // 便于调试少量请求，同时保持正式测量入口一致。
   if(argc < 2)
     fail("缺少运行模式");
   for(argument = 2; argument < argc; argument += 2) {
