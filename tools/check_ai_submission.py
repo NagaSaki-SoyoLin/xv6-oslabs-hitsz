@@ -33,7 +33,8 @@ def git_lines(root, *arguments):
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    base = "lab3-ai-starter-v1"
+    # 学生从 v3 起始代码提交；此前 v1/v2 的框架与中文注释不应被当成学生改动。
+    base = "lab3-ai-starter-v3"
     committed = git_lines(root, "diff", "--name-only", base + "..HEAD")
     working = git_lines(root, "diff", "--name-only")
     staged = git_lines(root, "diff", "--cached", "--name-only")

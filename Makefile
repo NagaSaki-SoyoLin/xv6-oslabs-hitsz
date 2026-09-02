@@ -369,6 +369,12 @@ grade:
           (echo "'make clean' failed.  HINT: Do you have another running instance of xv6?" && exit 1)
 	./grade-lab-$(LAB) $(GRADEFLAGS)
 
+grade-ai:
+	@echo $(MAKE) clean
+	@$(MAKE) clean || \
+	  (echo "'make clean' failed.  HINT: Do you have another running instance of xv6?" && exit 1)
+	./grade-ai $(GRADEFLAGS)
+
 diff:
 	git diff lock-base-26 HEAD > commit.patch
 format:
@@ -444,4 +450,4 @@ myapi.key:
 	fi;
 
 
-.PHONY: handin tarball tarball-pref clean grade handin-check
+.PHONY: handin tarball tarball-pref clean grade grade-ai handin-check

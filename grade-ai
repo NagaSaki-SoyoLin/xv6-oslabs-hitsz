@@ -21,7 +21,7 @@ METRICS = (
 )
 
 
-@test(1, "AI baseline 多 worker 基线")
+@test(0, "AI baseline 多 worker 基线（前置检查）")
 def test_baseline():
     baseline.run_qemu(
         shell_script(["modelprep", "aiinfer baseline -w 3 -r 24"]),
@@ -32,19 +32,19 @@ def test_baseline():
     baseline.match(METRICS.format(mode="baseline"))
 
 
-@test(1, "AI 模型与 embedding 加载")
+@test(6, "AI 模型与 embedding 加载（附加题）")
 def test_model():
     model.run_qemu(shell_script(["modelprep", "aimodeltest"]), timeout=180)
     model.match(r"^AIMODELTEST: verify OK shards=74 checksum=[1-9][0-9]*$")
 
 
-@test(1, "AI KV 持久化与恢复")
+@test(8, "AI KV 持久化与恢复（附加题）")
 def test_kv():
     kv.run_qemu(shell_script(["modelprep", "aikvtest"]), timeout=180)
     kv.match(r"^AIKVTEST: verify OK requests=4 bytes=[1-9][0-9]*$")
 
 
-@test(1, "AI student 多 worker 优化链路")
+@test(6, "AI student 多 worker 指标与性能输入（附加题）")
 def test_student():
     student.run_qemu(
         shell_script(["modelprep", "aiinfer student -w 3 -r 24"]),
@@ -54,7 +54,7 @@ def test_student():
     student.match(METRICS.format(mode="student"))
 
 
-@test(1, "AI 两条必做通路输出等价")
+@test(6, "AI 两条通路输出等价（附加题）")
 def test_compare():
     compare.run_qemu(
         shell_script(["modelprep", "aiinfer compare -w 3 -r 24"]),
@@ -63,7 +63,7 @@ def test_compare():
     compare.match(r"^AIINFER_COMPARE: verify OK checksum=[1-9][0-9]*$")
 
 
-@test(1, "AI KV-aware prefetch 选做")
+@test(4, "AI KV-aware prefetch（附加题内选做）")
 def test_prefetch():
     prefetch.run_qemu(
         shell_script(["modelprep", "aiinfer prefetch -w 3 -r 24"]),
