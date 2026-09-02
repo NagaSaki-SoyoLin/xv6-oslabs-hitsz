@@ -70,7 +70,7 @@ main(int argc, char *argv[])
   session.worker = 0;
   session.requests = 1;
   if(ai_student_model_begin(&session) < 0)
-    fail("任务三尚未实现");
+    fail("AI 附加题一：模型加载尚未实现");
 
   for(family = AI_MODEL_FAMILY; family <= AI_EMBED_FAMILY; family++) {
     shards = family == AI_MODEL_FAMILY ? AI_MODEL_SHARDS : AI_EMBED_SHARDS;

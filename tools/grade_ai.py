@@ -33,6 +33,14 @@ DEFAULT_POLICY = {
     "kv_file_bytes": 2048,
     "weights": {"throughput": 0.5, "spins": 0.3, "p95": 0.2},
     "caps": {"throughput": 2.0, "spins": 8.0, "p95": 2.0},
+    "performance_bands": [
+        (2.60, 6),
+        (1.80, 5),
+        (1.30, 4),
+        (1.05, 3),
+        (0.90, 1),
+        (0.00, 0),
+    ],
 }
 
 
@@ -120,6 +128,14 @@ def weighted_ratio(values, policy):
     return capped, score
 
 
+def performance_score(weighted, policy):
+    """把同机加权倍率换算为 AI 附加题中的 6 分性能项。"""
+    for minimum, points in policy["performance_bands"]:
+        if weighted >= minimum:
+            return points
+    return 0
+
+
 def load_policy(path):
     policy = dict(DEFAULT_POLICY)
     if path is not None:
@@ -168,6 +184,8 @@ def main(argv=None):
         "required_ratios": required_ratios,
         "capped_ratios": capped,
         "weighted_ratio": score,
+        "performance_score": performance_score(score, policy),
+        "performance_score_max": 6,
     }
     if args.bonus:
         bonus_median = median_metrics(bonus_samples)

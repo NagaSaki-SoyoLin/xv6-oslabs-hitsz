@@ -596,7 +596,7 @@ compare_paths(int workers, int requests)
   // baseline 与 student 在独立运行中使用同一 workload；若实现了选做，
   // prefetch 还必须与 student 等价。性能评分在正确性检查通过后才有意义。
   if(!ai_student_path.implemented)
-    fail("任务三和任务四尚未全部完成");
+    fail("模型加载和 KV 持久化两个 AI 附加题尚未全部完成");
   run_path(&ai_baseline_path, workers, requests, &compare_baseline);
   run_path(&ai_student_path, workers, requests, &compare_student);
   verify_equal(&compare_baseline, &compare_student, workers, requests);

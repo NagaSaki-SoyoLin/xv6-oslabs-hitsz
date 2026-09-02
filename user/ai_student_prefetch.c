@@ -8,7 +8,7 @@ ai_student_prefetch_begin(struct ai_session *session)
 {
   // TODO(LAB3-AI，选做)：建立固定小窗口的 KV 预取状态。
   // 推荐使用轻量辅助进程提前读取下一条记录，让数据进入共享 buffer cache。
-  // 不允许扩大 NBUF，也不能跳过任务四要求的真实恢复。
+  // 不允许扩大 NBUF，也不能跳过附加题二要求的真实恢复。
   (void)session;
   return -1;
 }

@@ -44,7 +44,7 @@ def test_kv():
     kv.match(r"^AIKVTEST: verify OK requests=4 bytes=[1-9][0-9]*$")
 
 
-@test(6, "AI student 多 worker 指标与性能输入（附加题）")
+@test(0, "AI student 多 worker 指标（性能评分前置）")
 def test_student():
     student.run_qemu(
         shell_script(["modelprep", "aiinfer student -w 3 -r 24"]),
@@ -52,6 +52,62 @@ def test_student():
     )
     student.match(r"^AIINFER: verify OK mode=student$")
     student.match(METRICS.format(mode="student"))
+
+
+def metric_values(runner, mode):
+    prefix = "AIINFER_METRICS mode=" + mode + " "
+    lines = [line for line in runner.qemu.output.splitlines() if line.startswith(prefix)]
+    if len(lines) != 1:
+        raise AssertionError("无法取得唯一的 AI 指标行")
+    values = {}
+    for field in lines[0].split()[2:]:
+        key, value = field.split("=", 1)
+        values[key] = int(value)
+    return values
+
+
+def weighted_performance():
+    # 性能分使用同机 baseline/student 比值，避免不同教学机器的绝对速度差异。
+    test_baseline()
+    baseline_values = metric_values(baseline, "baseline")
+    student_values = metric_values(student, "student")
+    if baseline_values["checksum"] != student_values["checksum"]:
+        raise AssertionError("baseline 与 student checksum 不一致")
+    throughput = student_values["throughput_milli"] / baseline_values["throughput_milli"]
+    spins = baseline_values["total_spins"] / max(1, student_values["total_spins"])
+    p95 = baseline_values["p95_ticks"] / max(1, student_values["p95_ticks"])
+    return 0.5 * min(throughput, 2.0) + 0.3 * min(spins, 8.0) + 0.2 * min(p95, 2.0)
+
+
+def require_performance(minimum):
+    value = weighted_performance()
+    if value < minimum:
+        raise AssertionError("AI 加权性能倍率 %.3f，未达到 %.2f" % (value, minimum))
+
+
+@test(1, "AI 相对性能：不明显退化", parent=test_student)
+def test_performance_090():
+    require_performance(0.90)
+
+
+@test(2, "AI 相对性能：略优于 baseline", parent=test_student)
+def test_performance_105():
+    require_performance(1.05)
+
+
+@test(1, "AI 相对性能：可见改善", parent=test_student)
+def test_performance_130():
+    require_performance(1.30)
+
+
+@test(1, "AI 相对性能：明显改善", parent=test_student)
+def test_performance_180():
+    require_performance(1.80)
+
+
+@test(1, "AI 相对性能：达到满分档", parent=test_student)
+def test_performance_260():
+    require_performance(2.60)
 
 
 @test(6, "AI 两条通路输出等价（附加题）")

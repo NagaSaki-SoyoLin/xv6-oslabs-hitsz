@@ -57,7 +57,7 @@ main(int argc, char *argv[])
   session.requests = KV_TEST_REQUESTS;
 
   if(ai_student_kv_begin(&session) < 0)
-    fail("任务四尚未实现");
+    fail("AI 附加题二：KV 持久化尚未实现");
   if(ai_student_kv_begin_write(&session) < 0) {
     ai_student_kv_end(&session);
     fail("无法开始写入阶段");
