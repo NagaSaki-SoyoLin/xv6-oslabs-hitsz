@@ -9,7 +9,7 @@ int main(int argc, char *argv[]) {
   pipe(pcf);
 
   int fpid = getpid(), pid = fork();
-  if (pid > 0) {
+  if (pid == 0) {
     close(pcf[0]);
     close(pfc[1]);
 
