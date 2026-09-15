@@ -96,7 +96,7 @@ def end_part(name):
     show_part.title = ""
     TESTS.append(show_part)
 
-def run_tests():
+def run_tests(exit_on_failure=True):
     """Set up for testing and run the registered test functions."""
 
     # Handle command line
@@ -125,7 +125,7 @@ def run_tests():
             print("Score: %d/%d" % (TOTAL, POSSIBLE))
     except KeyboardInterrupt:
         pass
-    if TOTAL < POSSIBLE:
+    if exit_on_failure and TOTAL < POSSIBLE:
         sys.exit(1)
 
 def get_current_test():
