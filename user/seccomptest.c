@@ -61,8 +61,8 @@ main(int argc, char *argv[])
   // === Task 3: Process Resource Limits ===
   printf("\n-- Task 3: Process Resource Limits --\n");
 
-  // Reset allow mask to allow everything for fork test
-  seccomp_ctl(SECCOMP_SETMASK, 0);
+  // Allow every syscall for the resource-limit test.
+  seccomp_ctl(SECCOMP_SETMASK, ~0UL);
 
   // Set max children to 2
   seccomp_ctl(SECCOMP_MAXCHILD, 2);

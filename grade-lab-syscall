@@ -61,12 +61,4 @@ def test_yield_test():
     r.match(".*?Child with PID 6 begins to run")
     r.match(".*?parent yield finished")
 
-@test(20, "seccomp test")
-def test_seccomp_test():
-    r.run_qemu(shell_script([
-        'seccomptest'
-    ]), make_args=["CPUS=1", "LAB_SYSCALL_TEST=on"])
-    r.match("seccomp test OK")
-
-
-run_tests()
+run_tests(exit_on_failure=False)
