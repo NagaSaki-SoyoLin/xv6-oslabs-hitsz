@@ -5,8 +5,8 @@
 #include "user.h"
 int main(int argc, char *argv[]) {
   int pfc[2], pcf[2];  // 两个管道, pfc为父进程到子进程, pcf为子进程到父进程
-  pipe(pfc);           // parent to child
-  pipe(pcf);           // child to parent
+  pipe(pfc);           // father to child
+  pipe(pcf);           // child to father
 
   int f_pid = getpid(), pid = fork();  // 获取父进程id, 创建子进程
   if (pid == 0) {
