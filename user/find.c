@@ -15,7 +15,7 @@ char *fmtname(char *path) {
 
 // 递归查找文件, 输出 路径/文件名
 void find(char *path, char *target) {
-  char buf[512], *p;  // buf 存储完整路径, p 指向路径最后一个字符的下一个位置
+  char buf[512], *p;  // buf 存储下一次递归的完整路径, p 指向路径最后一个字符的下一个位置
   int fd;             // 文件描述符(0: 标准输入, 1: 标准输出, 2: 标准错误)
   struct stat st;     // 文件信息结构体, stat 表示 status, 即状态
   struct dirent de;   // 目录项结构体, dirent 表示 directory entry, 即目录项
