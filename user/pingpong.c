@@ -4,6 +4,11 @@
 #include "kernel/types.h"
 #include "user.h"
 int main(int argc, char *argv[]) {
+  if (argc != 1) {
+    printf("pingpong needs no argument!\n");
+    exit(1);
+  }
+
   int pfc[2], pcf[2];  // 两个管道, pfc为父进程到子进程, pcf为子进程到父进程
   pipe(pfc);           // father to child
   pipe(pcf);           // child to father
