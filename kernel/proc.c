@@ -338,16 +338,16 @@ void exit(int status) {
 
   acquire(&p->lock);
 
-  struct proc *pp;
-  static const char *state_name[] = {"unused", "sleep", "runble", "run", "zombie"};
+  struct proc *pp; // 临时变量，用于遍历子进程
+  static const char *state_name[] = {"unused", "sleep", "runble", "run", "zombie"}; // 进程状态名称数组
 
   // 打印父进程的信息
-  pp = original_parent;
+  pp = original_parent; // 将父进程赋值给临时变量pp
   exit_info("proc %d exit, parent pid %d, name %s, state %s\n",
     p->pid, pp->pid, pp->name, state_name[pp->state]);
 
   // 打印子进程信息
-  int child_num = 0;
+  int child_num = 0; // 子进程编号
   for (pp = proc; pp < &proc[NPROC]; pp++) {
     if (pp->parent == p) {
       acquire(&pp->lock);
