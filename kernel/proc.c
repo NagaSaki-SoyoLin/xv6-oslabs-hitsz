@@ -338,6 +338,26 @@ void exit(int status) {
 
   acquire(&p->lock);
 
+  struct proc *pp;
+  static const char *state_name[] = {"unused", "sleep", "runble", "run", "zombie"};
+
+  // 打印父进程的信息
+  pp = original_parent;
+  exit_info("proc %d exit, parent pid %d, name %s, state %s\n",
+    p->pid, pp->pid, pp->name, state_name[pp->state]);
+
+  // 打印子进程信息
+  int child_num = 0;
+  for (pp = proc; pp < &proc[NPROC]; pp++) {
+    if (pp->parent == p) {
+      acquire(&pp->lock);
+      exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n",
+        p->pid, child_num, pp->pid, pp->name, state_name[pp->state]);
+      release(&pp->lock);
+      child_num++;
+    }
+  }
+
   // Give any children to init.
   reparent(p);
 
