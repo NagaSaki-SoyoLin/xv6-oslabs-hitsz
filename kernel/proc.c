@@ -339,7 +339,7 @@ void exit(int status) {
   acquire(&p->lock);
 
   struct proc *pp; // 临时变量，用于遍历子进程
-  static const char *state_name[] = {"unused", "sleep", "runble", "run", "zombie"}; // 进程状态名称数组
+  static const char *state_name[] = {"UNUSED", "SLEEPING", "RUNNABLE", "RUNNING", "ZOMBIE"}; // 进程状态名称数组
 
   // 打印父进程的信息
   pp = original_parent; // 将父进程赋值给临时变量pp
