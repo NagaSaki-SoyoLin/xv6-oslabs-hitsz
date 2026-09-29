@@ -475,10 +475,10 @@ void scheduler(void) {
 // break in the few places where a lock is held but
 // there's no process.
 void sched(void) {
-  int intena;
-  struct proc *p = myproc();
+  int intena; // 中断使能标志
+  struct proc *p = myproc(); // 取到当前正在运行的进程
 
-  if (!holding(&p->lock)) panic("sched p->lock");
+  if (!holding(&p->lock)) panic("sched p->lock"); // 检查当前进程是否持有锁, 如果没有持有锁, 则panic
   if (mycpu()->noff != 1) panic("sched locks");
   if (p->state == RUNNING) panic("sched running");
   if (intr_get()) panic("sched interruptible");
@@ -490,11 +490,11 @@ void sched(void) {
 
 // Give up the CPU for one scheduling round.
 void yield(void) {
-  struct proc *p = myproc();
-  acquire(&p->lock);
-  p->state = RUNNABLE;
-  sched();
-  release(&p->lock);
+  struct proc *p = myproc(); // 取到当前正在运行的进程
+  acquire(&p->lock); // 先拿锁, 保护进程状态修改
+  p->state = RUNNABLE; // 当前进程主动让出 CPU, 但之后还可以继续运行
+  sched(); // 进入调度流程, 切回调度器线程
+  release(&p->lock); // 这个进程再次被调度回来后, 才会继续执行到这里
 }
 
 // A fork child's very first scheduling by scheduler()
