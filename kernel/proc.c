@@ -117,6 +117,9 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // 初始化系统调用白名单
+  p->whitelist = 0xffffffff; // 默认所有系统调用都被允许
+
   return p;
 }
 

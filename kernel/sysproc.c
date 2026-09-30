@@ -112,3 +112,18 @@ uint64 sys_yield(void) {
   yield(); // 调用 yield 函数
   return 0;
 }
+
+// 新增的系统调用 seccomp_ctl
+uint64 sys_seccomp_ctl(void) {
+  int op; // 操作码, op=0时设置系统调用白名单位掩码, op=1时设置最大子进程数
+  uint64 arg; // op=0时arg为位掩码, op=1时为arg最大数量
+  if (argint(0, &op) < 0) return -1; // 从 trapframe->a0 取出 op
+  if (argaddr(1, &arg) < 0) return -1; // 从 trapframe->a1 取出 arg
+
+  struct proc *p = myproc(); // 获取当前进程
+  if (op == 0) {
+    p->whitelist = arg; // 设置系统调用白名单掩码
+    return 0; // 设置成功
+  }
+  return -1; // 不支持的操作码
+}
