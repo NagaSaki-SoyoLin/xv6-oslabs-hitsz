@@ -91,6 +91,7 @@ extern uint64 sys_uptime(void);
 extern uint64 sys_rename(void);
 extern uint64 sys_yield(void); // 新增的系统调用 yield
 extern uint64 sys_seccomp_ctl(void); // 新增的系统调用 seccomp_ctl
+extern uint64 sys_seccomp_getlog(void); // 新增的系统调用 seccomp_getlog
 
 static uint64 (*syscalls[])(void) = {
     [SYS_fork] sys_fork,   [SYS_exit] sys_exit,     [SYS_wait] sys_wait,     [SYS_pipe] sys_pipe,
@@ -99,15 +100,25 @@ static uint64 (*syscalls[])(void) = {
     [SYS_sleep] sys_sleep, [SYS_uptime] sys_uptime, [SYS_open] sys_open,     [SYS_write] sys_write,
     [SYS_mknod] sys_mknod, [SYS_unlink] sys_unlink, [SYS_link] sys_link,     [SYS_mkdir] sys_mkdir,
     [SYS_close] sys_close, [SYS_rename] sys_rename, [SYS_yield] sys_yield,   [SYS_seccomp_ctl] sys_seccomp_ctl,
-}; // 将 sys_yield 添加到 syscalls 分发表数组中; 将 seccomp_ctl 添加到 syscalls 分发表数组中
+    [SYS_seccomp_getlog] sys_seccomp_getlog,
+}; // 将 sys_yield, sys_seccomp_ctl, sys_seccomp_getlog 添加到 syscalls 分发表数组中
 
 void syscall(void) {
   int num;
   struct proc *p = myproc();
 
   num = p->trapframe->a7;
-  if (num > 0 && num < NELEM(syscalls) && syscalls[num] && p->whitelist >> num & 1) {
-    // 新增白名单机制, 如果系统调用在白名单中, 则执行系统调用, 否则返回 -1
+
+  if (num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    // 新增白名单机制, 如果系统调用不在白名单中, 则记录系统调用到审计日志中, 不执行系统调用
+    // seccomp_ctl 和 seccomp_getlog 始终可用，即使设置了白名单也能被调用，否则进程将无法恢复或查询日志
+    if (num != SYS_seccomp_ctl && num != SYS_seccomp_getlog && (p->seccomp_mask >> num & 1) == 0) {
+      if (p->auditlog_pos < 32) { // 缓冲区满后丢弃新条目, 防止越界写
+        p->auditlog[p->auditlog_pos++] = num; // 记录系统调用到审计日志中
+      }
+      p->trapframe->a0 = -1; // 返回 -1 表示系统调用被拦截
+      return; // 直接返回
+    }
     p->trapframe->a0 = syscalls[num]();
   } else {
     printf("%d %s: unknown sys call %d\n", p->pid, p->name, num);

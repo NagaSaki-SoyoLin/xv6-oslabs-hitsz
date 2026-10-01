@@ -97,8 +97,8 @@ uint64 sys_yield(void) {
     p->pid, p->trapframe->epc); // 打印当前正在运行进程的 pid 以及它陷入内核前的用户态 pc
   release(&p->lock); // 释放当前进程的锁
 
-  for (struct proc *pn = proc; pn < &proc[NPROC]; pn++) {
-    // pn 下一个可能被调度运行的进程
+  for (int i = 0; i < NPROC; i++) {
+    struct proc *pn = &proc[(p - proc + i + 1) % NPROC]; // pn 下一个可能被调度运行的进程
     acquire(&pn->lock); // 尝试获取 pn 的锁
     if (pn->state == RUNNABLE) {
       printf("Next runnable process pid is %d and user pc is %p\n",
@@ -122,8 +122,34 @@ uint64 sys_seccomp_ctl(void) {
 
   struct proc *p = myproc(); // 获取当前进程
   if (op == 0) {
-    p->whitelist = arg; // 设置系统调用白名单掩码
+    p->seccomp_mask = arg; // 设置系统调用白名单掩码
+    return 0; // 设置成功
+  }
+  if (op == 1) {
+    p->maxchcnt = arg; // 设置最大子进程数
     return 0; // 设置成功
   }
   return -1; // 不支持的操作码
+}
+
+// 新增的系统调用 get_seccomp_getlog
+uint64 sys_seccomp_getlog(void) {
+  uint64 buf_addr, len_addr; // 函数参数传入的是用户态指针(地址)
+  if (argaddr(0, &buf_addr) < 0) return -1; // 从 trapframe->a0 取出 buf_addr
+  if (argaddr(1, &len_addr) < 0) return -1; // 从 trapframe->a1 取出 len_addr
+
+  struct proc *p = myproc(); // 获取当前进程
+  int len; // 用户传入的缓冲区容量
+  int n; // 实际能写入的条数
+
+  // 用户到内核: 读入用户给的缓冲区容量 len
+  if (copyin(p->pagetable, (char *)&len, len_addr, sizeof(len)) < 0) return -1;
+  // 实际条数 = min(用户容量, 已记录条数)
+  n = p->auditlog_pos < len ? p->auditlog_pos : len;
+  // 内核到用户: 把前 n 条日志写到用户缓冲区
+  if (n > 0 && copyout(p->pagetable, buf_addr, (char *)p->auditlog, n * sizeof(uint64)) < 0) return -1;
+  // 内核到用户: 把实际写入条数写回用户的 len
+  if (copyout(p->pagetable, len_addr, (char *)&n, sizeof(n)) < 0) return -1;
+
+  return 0;
 }

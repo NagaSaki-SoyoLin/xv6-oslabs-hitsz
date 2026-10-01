@@ -117,8 +117,10 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
-  // 初始化系统调用白名单
-  p->whitelist = 0xffffffff; // 默认所有系统调用都被允许
+  p->seccomp_mask = ~0UL; // 初始化系统调用白名单, 默认所有系统调用都被允许
+  p->auditlog_pos = 0; // 初始化审计日志当前写入位置, 从头开始写入
+  p->maxchcnt = 0; // 初始化子进程数量限制, 默认不限制
+  p->child_count = 0; // 初始化子进程数量, 从头开始计数
 
   return p;
 }
@@ -233,6 +235,11 @@ int fork(void) {
   struct proc *np;
   struct proc *p = myproc();
 
+  // 子进程数量超过限制, 创建子进程失败, p->maxchcnt==0表示不限制子进程数量
+  if (p->maxchcnt > 0 && p->child_count >= p->maxchcnt) {
+    return -1;
+  }
+
   // Allocate process.
   if ((np = allocproc()) == 0) {
     return -1;
@@ -265,7 +272,14 @@ int fork(void) {
 
   np->state = RUNNABLE;
 
+  // 子进程继承父进程相关属性
+  np->seccomp_mask = p->seccomp_mask; // 继承系统调用白名单
+  np->maxchcnt = p->maxchcnt; // 继承子进程数量限制
+  np->child_count = 0; // 子进程数量初始化为零
+
   release(&np->lock);
+
+  p->child_count++; // 子进程数量加一
 
   return pid;
 }
@@ -411,6 +425,7 @@ int wait(uint64 addr, int flags) {
           freeproc(np);
           release(&np->lock);
           release(&p->lock);
+          p->child_count--; // 子进程数量减一
           return pid;
         }
         release(&np->lock);

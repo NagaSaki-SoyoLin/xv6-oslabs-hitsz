@@ -103,5 +103,9 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  uint64 whitelist;            // 添加系统调用白名单, 用位掩码表示
+  uint64 seccomp_mask;         // 添加系统调用白名单, 用位掩码表示
+  uint64 auditlog[32];         // 添加审计日志缓冲区, 记录所有被白名单拦截的系统调用号
+  uint64 auditlog_pos;         // 添加审计日志缓冲区当前写入位置
+  uint64 maxchcnt;             // 添加最大子进程数
+  uint64 child_count;          // 添加子进程计数
 };
