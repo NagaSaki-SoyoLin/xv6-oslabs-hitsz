@@ -25,6 +25,8 @@ ai_student_kv_store(struct ai_session *session, int request,
                     struct kv_entry *kv, struct ai_io *io)
 {
   // TODO(LAB3-AI，附加题二)：把当前请求的完整 KV cache 写入 xv6 文件系统。
+  // request 必须是 [0, session->requests) 内预期的下一条；非法序号返回 -1，
+  // 且不得改变文件位置、下一请求序号、KV 内容或 I/O 统计，后续合法调用仍须可用。
   // 必须循环处理短写；只有 AI_KV_FILE_BYTES 字节全部成功后才更新统计。
   // aiinfer 随后会立即释放原页面，因此不能依赖 kv 指针中的残留数据。
   (void)session;
@@ -55,6 +57,8 @@ ai_student_kv_restore(struct ai_session *session, int request,
                       struct kv_entry *kv, struct ai_io *io)
 {
   // TODO(LAB3-AI，附加题二)：精确恢复当前请求的完整 KV cache。
+  // request 必须是 [0, session->requests) 内预期的下一条；非法序号返回 -1，
+  // 且不得改变文件位置、下一请求序号、目标 KV 内容或 I/O 统计，后续合法调用仍须可用。
   // 目标页已被覆盖，必须循环处理短读；全部成功后再更新读取字节数。
   // 单项验证：先运行 modelprep，再运行 aikvtest。
   (void)session;

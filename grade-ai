@@ -41,7 +41,8 @@ def test_model():
 @test(8, "AI KV 持久化与恢复（附加题）")
 def test_kv():
     kv.run_qemu(shell_script(["modelprep", "aikvtest"]), timeout=180)
-    kv.match(r"^AIKVTEST: verify OK requests=4 bytes=[1-9][0-9]*$")
+    kv.match(r"^AIKVTEST: request order OK$")
+    kv.match(r"^AIKVTEST: verify OK requests=4 bytes=8192$")
 
 
 @test(0, "AI student 多 worker 指标（性能评分前置）")

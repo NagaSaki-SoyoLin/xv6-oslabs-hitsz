@@ -41,6 +41,31 @@ fill_kv(struct kv_entry *kv, int request)
   }
 }
 
+typedef int (*kv_operation)(struct ai_session *, int, struct kv_entry *,
+                            struct ai_io *);
+
+static void
+reject_request(struct ai_session *session, int request, struct kv_entry *kv,
+               struct ai_io *io, kv_operation operation, char *message)
+{
+  struct ai_io saved_io = *io;
+  uint checksum = kv_checksum(kv);
+  char *error = 0;
+
+  if(operation(session, request, kv, io) >= 0)
+    error = message;
+  else if(memcmp(io, &saved_io, sizeof(*io)) != 0)
+    error = "拒绝非法 request 时改变了 I/O 统计";
+  else if(kv_checksum(kv) != checksum)
+    error = "拒绝非法 request 时改变了 KV 内容";
+
+  if(error) {
+    sbrk(-PGSIZE);
+    ai_student_kv_end(session);
+    fail(error);
+  }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -71,11 +96,23 @@ main(int argc, char *argv[])
     }
     fill_kv(kv, request);
     saved_checksum[request] = kv_checksum(kv);
+    reject_request(&session, -1, kv, &io, ai_student_kv_store,
+                   "store 接受了负数 request");
+    reject_request(&session, KV_TEST_REQUESTS, kv, &io, ai_student_kv_store,
+                   "store 接受了越界 request");
+    if(request + 1 < KV_TEST_REQUESTS)
+      reject_request(&session, request + 1, kv, &io, ai_student_kv_store,
+                     "store 接受了跳号 request");
+    if(request > 0)
+      reject_request(&session, request - 1, kv, &io, ai_student_kv_store,
+                     "store 接受了已写入的 request");
     if(ai_student_kv_store(&session, request, kv, &io) < 0) {
       sbrk(-PGSIZE);
       ai_student_kv_end(&session);
       fail("KV 写盘失败");
     }
+    reject_request(&session, request, kv, &io, ai_student_kv_store,
+                   "store 接受了重复 request");
     sbrk(-PGSIZE);
   }
   if(ai_student_kv_end_write(&session) < 0) {
@@ -94,6 +131,16 @@ main(int argc, char *argv[])
       fail("无法重新申请 KV 页面");
     }
     memset(kv, 0xa5, PGSIZE);
+    reject_request(&session, -1, kv, &io, ai_student_kv_restore,
+                   "restore 接受了负数 request");
+    reject_request(&session, KV_TEST_REQUESTS, kv, &io, ai_student_kv_restore,
+                   "restore 接受了越界 request");
+    if(request + 1 < KV_TEST_REQUESTS)
+      reject_request(&session, request + 1, kv, &io, ai_student_kv_restore,
+                     "restore 接受了跳号 request");
+    if(request > 0)
+      reject_request(&session, request - 1, kv, &io, ai_student_kv_restore,
+                     "restore 接受了已恢复的 request");
     if(ai_student_kv_restore(&session, request, kv, &io) < 0) {
       sbrk(-PGSIZE);
       ai_student_kv_end(&session);
@@ -104,6 +151,8 @@ main(int argc, char *argv[])
       ai_student_kv_end(&session);
       fail("恢复后的 KV 内容错误");
     }
+    reject_request(&session, request, kv, &io, ai_student_kv_restore,
+                   "restore 接受了重复 request");
     sbrk(-PGSIZE);
   }
   ai_student_kv_end(&session);
@@ -112,6 +161,7 @@ main(int argc, char *argv[])
      io.kv_read_bytes != KV_TEST_REQUESTS * AI_KV_FILE_BYTES)
     fail("KV 读写字节数错误");
 
+  printf("AIKVTEST: request order OK\n");
   printf("AIKVTEST: verify OK requests=%d bytes=%d\n",
          KV_TEST_REQUESTS, KV_TEST_REQUESTS * AI_KV_FILE_BYTES);
   exit(0);
