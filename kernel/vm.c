@@ -379,3 +379,43 @@ int test_pagetable() {
   printf("test_pagetable: %d\n", satp != gsatp);
   return satp != gsatp;
 }
+
+// 新增页表打印辅助函数
+static void vmprintwalk(pagetable_t pgtbl, uint64 tag) {
+  int depth = tag >> 39; // 记录递归深度
+  uint64 va_prefix = tag & ((1L << 39) - 1); // 记录虚拟地址前缀
+  // 每个页表有 2^9 = 512 个页表项
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pgtbl[i]; // 获取页表项
+
+    if ((pte & PTE_V) == 0)
+      continue; // 无效页表项
+
+    printf("||");
+    for (int j = 0; j < depth; j++)
+      printf("   ||");
+    if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+      // 有效且为非叶子项, 指向下一级页表
+      uint64 child = PTE2PA(pte); // 获取子页表的物理地址
+      printf("idx: %d: pa: %p, flags: ----\n", i, child);
+      uint64 newprefix = va_prefix | ((uint64)i << PXSHIFT(2 - depth)); // 计算新的虚拟地址前缀
+      vmprintwalk((pagetable_t)child, ((uint64)(depth + 1) << 39) | newprefix); // 递归打印子页表
+    } else {
+      // 有效且为叶子项, 指向物理页最终映射
+      uint64 va = va_prefix | ((uint64)i << PXSHIFT(2 - depth)); // 获取虚拟地址
+      uint64 pa = PTE2PA(pte); // 获取物理地址
+      char flags[5] = "----"; // 页表项标志
+      if (pte & PTE_R) flags[0] = 'r';
+      if (pte & PTE_W) flags[1] = 'w';
+      if (pte & PTE_X) flags[2] = 'x';
+      if (pte & PTE_U) flags[3] = 'u';
+      printf("idx: %d: va: %p -> pa: %p, flags: %s\n", i, va, pa, flags);
+    }
+  }
+}
+
+// 新增页表打印函数
+void vmprint(pagetable_t pgtbl) {
+  printf("page table %p\n", pgtbl);
+  vmprintwalk(pgtbl, 0);
+}
