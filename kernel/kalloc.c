@@ -18,16 +18,26 @@ struct run {
   struct run *next;
 };
 
-struct {
+struct kmem{
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmems[NCPU]; // 由原来所有CPU共享全局freelist, 改为每个CPU有自己的freelist
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+  for (int i = 0; i < NCPU; i++) {
+    // 初始化每个CPU的kmem.lock锁
+    static char lock_names[NCPU][16]; // 使用静态变量防止乱码
+    snprintf(lock_names[i], sizeof(lock_names[i]), "kmem%d", i); // 新增锁名以 kmem 开头
+    initlock(&kmems[i].lock, lock_names[i]);
+    // 初始化每个CPU的freelist
+    int freelist_size = (PHYSTOP - (uint64)end) / NCPU; // 计算每个CPU的freelist的最大内存
+    if (i < NCPU - 1)
+      freerange(end + i * freelist_size, end + (i + 1) * freelist_size);
+    else
+      freerange(end + i * freelist_size, (char*)PHYSTOP); // 防止漏页
+  }
 }
 
 void
@@ -56,10 +66,16 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  int freelist_size = (PHYSTOP - (uint64)end) / NCPU; // 计算每个CPU的freelist的最大内存
+  int cpu_id = ((uint64)pa - (uint64)end) / freelist_size; // 计算内存页对应的CPU号
+  cpu_id = cpu_id >= NCPU ? NCPU - 1 : cpu_id; // 防止越界
+  struct kmem *kmem = &kmems[cpu_id]; // 获取对应CPU的kmem
+
+  // 将内存页加入对应CPU的freelist
+  acquire(&kmem->lock);
+  r->next = kmem->freelist;
+  kmem->freelist = r;
+  release(&kmem->lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -70,11 +86,34 @@ kalloc(void)
 {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+  push_off(); // 禁止中断，避免死锁
+  int cpu_id = cpuid(); // 获取当前CPU号
+  struct kmem *kmem = &kmems[cpu_id]; // 获取当前CPU的kmem
+  pop_off(); // 允许中断
+
+  acquire(&kmem->lock);
+  r = kmem->freelist;
+  if(r) {
+    kmem->freelist = r->next;
+    release(&kmem->lock);
+  }
+  else {
+    // 当前CPU的 freelist 为空，尝试从其他CPU的 freelist 中获取内存页
+    release(&kmem->lock); // 释放锁，避免死锁
+    for (int i = 0; i < NCPU; i++) {
+      if (i == cpu_id)
+        continue;
+      struct kmem *other_kmem = &kmems[i];
+      acquire(&other_kmem->lock);
+      r = other_kmem->freelist;
+      if (r) {
+        other_kmem->freelist = r->next;
+        release(&other_kmem->lock); // 释放锁，避免死锁
+        break; // 找到一个可用的内存页，跳出循环
+      }
+      release(&other_kmem->lock);
+    }
+  }
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
