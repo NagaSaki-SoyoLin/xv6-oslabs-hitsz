@@ -382,8 +382,8 @@ int test_pagetable() {
 
 // 新增页表打印辅助函数
 static void vmprintwalk(pagetable_t pgtbl, uint64 tag) {
-  int depth = tag >> 39; // 记录递归深度
-  uint64 va_prefix = tag & ((1L << 39) - 1); // 记录虚拟地址前缀
+  int depth = tag >> 39; // 用第39位记录递归深度
+  uint64 va_prefix = tag & ((1L << 39) - 1); // 用低39位记录虚拟地址前缀
   // 每个页表有 2^9 = 512 个页表项
   for (int i = 0; i < 512; i++) {
     pte_t pte = pgtbl[i]; // 获取页表项
