@@ -48,6 +48,7 @@ ai_student_kv_begin(struct ai_session *session)
   session->state[1] = 0; // 下一个要 store 的 request 编号
   session->state[2] = 0; // 下一个要 restore 的 request 编号
   session->state[3] = -1; // 当前打开的文件描述符
+  session->state[4] = 0; // 阶段: 0=闲 1=写中 2=读中
   return 0;
 }
 
@@ -58,6 +59,8 @@ ai_student_kv_begin_write(struct ai_session *session)
   char name[AI_KV_NAME_LEN];
   int fd;
 
+  if(session->state[4] != 0) // 不处于空闲状态则异常退出
+    return -1;
   ai_student_kv_name(name, session->worker); // 生成 worker 标识文件
   unlink(name); // 删除旧文件, 防止上轮残留
   fd = open(name, O_CREATE | O_WRONLY);
@@ -66,6 +69,7 @@ ai_student_kv_begin_write(struct ai_session *session)
 
   session->state[1] = 0; // 下一个要 store 的 request 编号
   session->state[3] = fd; // 保存当前文件描述符
+  session->state[4] = 1; // 切换为写状态
   return 0;
 }
 
@@ -78,6 +82,10 @@ ai_student_kv_store(struct ai_session *session, int request,
   // 且不得改变文件位置、下一请求序号、KV 内容或 I/O 统计，后续合法调用仍须可用。
   // 必须循环处理短写；只有 AI_KV_FILE_BYTES 字节全部成功后才更新统计。
   // aiinfer 随后会立即释放原页面，因此不能依赖 kv 指针中的残留数据。
+  if(session->state[4] != 1)
+    return -1; // 不处于写状态则异常退出
+  if(session->state[3] == -1)
+    return -1; // 文件描述符异常退出
   if (request < 0 || request >= session->requests
     || request != session->state[1])
     return -1; // 非法序号检测
@@ -93,10 +101,13 @@ int
 ai_student_kv_end_write(struct ai_session *session)
 {
   // TODO(LAB3-AI，附加题二)：结束写阶段，确保文件状态完整并关闭写描述符。
+  if(session->state[4] != 1)
+    return -1; // 不处于写状态则异常退出
   if (session->state[3] != -1) {
     close(session->state[3]);
     session->state[3] = -1;
   }
+  session->state[4] = 0; // 切换为空闲状态
   return 0;
 }
 
@@ -107,6 +118,10 @@ ai_student_kv_begin_read(struct ai_session *session)
   char name[AI_KV_NAME_LEN];
   int fd;
 
+  if(session->state[4] != 0) // 闲阶段才许开始读
+    return -1;
+  if(session->state[1] != session->requests) // 必须全部写完
+    return -1;
   ai_student_kv_name(name, session->worker); // 生成 worker 标识文件
   fd = open(name, O_RDONLY);
   if(fd < 0)
@@ -114,6 +129,7 @@ ai_student_kv_begin_read(struct ai_session *session)
 
   session->state[2] = 0; // 下一个要 restore 的 request 编号
   session->state[3] = fd; // 保存当前文件描述符
+  session->state[4] = 2; // 切换为读状态
   return 0;
 }
 
@@ -126,6 +142,10 @@ ai_student_kv_restore(struct ai_session *session, int request,
   // 且不得改变文件位置、下一请求序号、目标 KV 内容或 I/O 统计，后续合法调用仍须可用。
   // 目标页已被覆盖，必须循环处理短读；全部成功后再更新读取字节数。
   // 单项验证：先运行 modelprep，再运行 aikvtest。
+  if(session->state[4] != 2)
+    return -1; // 不处于写状态则异常退出
+  if(session->state[3] == -1)
+    return -1; // 文件描述符异常退出
   if (request < 0 || request >= session->requests
     || request != session->state[2])
     return -1; // 非法序号检测
@@ -150,6 +170,7 @@ ai_student_kv_end(struct ai_session *session)
     close(session->state[3]);
     session->state[3] = -1;
   }
+  session->state[4] = 0;
 
   ai_student_kv_name(name, session->worker);
   unlink(name); // 删除旧文件, 防止上轮残留
