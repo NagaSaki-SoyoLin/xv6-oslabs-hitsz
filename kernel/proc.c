@@ -133,6 +133,14 @@ found:
   return p;
 }
 
+// 释放私有内核页表前, 先断开指向用户页表的那段引用
+static void unsync_pagetable(pagetable_t k_pagetable) {
+  if ((k_pagetable[0] & PTE_V) == 0) return;
+  pte_t *kl1 = (pte_t *)PTE2PA(k_pagetable[0]);
+  for (int i = 0; i < (PLIC >> 21); i++)
+    kl1[i] = 0;
+}
+
 // 新建处理内核页表释放辅助函数
 static void freekpgtbl(pagetable_t pagetable) {
   for (int i = 0; i < 512; i++) {
@@ -160,6 +168,8 @@ static void freekpgtbl(pagetable_t pagetable) {
 static void freeproc(struct proc *p) {
   if (p->trapframe) kfree((void *)p->trapframe);
   p->trapframe = 0;
+  // 释放私有内核页表前, 先断开指向用户页表的那段引用
+  if (p->k_pagetable) unsync_pagetable(p->k_pagetable);
   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
   p->sz = 0;
@@ -230,6 +240,9 @@ void userinit(void) {
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  // 将进程用户页表映射到该进程自己内核页表
+  sync_pagetable(p);
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -257,6 +270,9 @@ int growproc(int n) {
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+
+  // 扩容可能新增 L1 项, 必须重同步
+  sync_pagetable(p);
   return 0;
 }
 
@@ -279,6 +295,9 @@ int fork(void) {
     return -1;
   }
   np->sz = p->sz;
+
+  // 将子进程用户页表映射到该进程自己内核页表
+  sync_pagetable(np);
 
   np->parent = p;
 
@@ -669,4 +688,22 @@ void procdump(void) {
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// 新增进程用户页表映射到该进程自己内核页表的同步函数
+void sync_pagetable(struct proc *p) {
+  pte_t *kl1 = (pte_t *)PTE2PA(p->k_pagetable[0]);
+
+  if ((p->pagetable[0] & PTE_V) == 0) {
+    // 用户空间还是空的, 把内核页表里这一段清掉即可
+    for (int i = 0; i < (PLIC >> 21); i++)
+      kl1[i] = 0;
+  } else {
+    pte_t *ul1 = (pte_t *)PTE2PA(p->pagetable[0]);
+    for (int i = 0; i < (PLIC >> 21); i++)
+      kl1[i] = ul1[i];
+  }
+
+  // 如果这张内核页表此刻正被 CPU 使用, 必须刷新 TLB
+  sfence_vma();
 }

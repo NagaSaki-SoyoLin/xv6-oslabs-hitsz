@@ -95,6 +95,11 @@ int exec(char *path, char **argv) {
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp;          // initial stack pointer
+
+  // 将进程用户页表映射到该进程自己内核页表
+  // 放在释放旧表之前, 内核页表就不会有一瞬间指着已释放的旧页表
+  sync_pagetable(p);
+
   proc_freepagetable(oldpagetable, oldsz);
 
   // 打印页表
