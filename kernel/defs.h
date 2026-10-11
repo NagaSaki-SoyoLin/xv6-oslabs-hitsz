@@ -180,6 +180,7 @@ int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             test_pagetable();
 void            vmprint(pagetable_t); // 新增页表打印函数
+pagetable_t     proc_kvminit(); // 新增创建进程私有内核页表函数
 
 // plic.c
 void            plicinit(void);

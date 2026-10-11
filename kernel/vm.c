@@ -419,3 +419,32 @@ void vmprint(pagetable_t pgtbl) {
   printf("page table %p\n", pgtbl);
   vmprintwalk(pgtbl, 0);
 }
+
+// 新增创建进程私有内核页表函数
+pagetable_t proc_kvminit() {
+  pagetable_t proc_k_pagetable = (pagetable_t)kalloc();
+  if (proc_k_pagetable == 0)
+    return 0;
+  memset(proc_k_pagetable, 0, PGSIZE);
+
+  // 串口寄存器 内核可写可读
+  if (mappages(proc_k_pagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W) != 0)
+    panic("proc_kvminit: uart");
+  // virtio 磁盘 MMIO 接口
+  if (mappages(proc_k_pagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) != 0)
+    panic("proc_kvminit: virtio");
+  // PLIC 中断控制器
+  if (mappages(proc_k_pagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W) != 0)
+    panic("proc_kvminit: plic");
+  // 内核代码段 只读 可执行
+  if (mappages(proc_k_pagetable, KERNBASE, (uint64)etext - KERNBASE, KERNBASE, PTE_R | PTE_X) != 0)
+    panic("proc_kvminit: text");
+  // 内核数据段及所用物理内存 可读写
+  if (mappages(proc_k_pagetable, (uint64)etext, PHYSTOP - (uint64)etext, (uint64)etext, PTE_R | PTE_W) != 0)
+    panic("proc_kvminit: data");
+  // trampoline 用户态/内核态切换时执行的蹦床代码 需映射
+  if (mappages(proc_k_pagetable, TRAMPOLINE, PGSIZE, (uint64)trampoline, PTE_R | PTE_X) != 0)
+    panic("proc_kvminit: tramp");
+
+  return proc_k_pagetable;
+}

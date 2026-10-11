@@ -21,6 +21,8 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[];  // trampoline.S
 
+extern pagetable_t kernel_pagetable; // vm.c
+
 // initialize the proc table at boot time.
 void procinit(void) {
   struct proc *p;
@@ -37,6 +39,7 @@ void procinit(void) {
     uint64 va = KSTACK((int)(p - proc));
     kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
     p->kstack = va;
+    p->kstack_pa = (uint64)pa; // 将内核栈物理页物理地址保存到新增字段中
   }
   kvminithart();
 }
@@ -117,7 +120,38 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // 建立私有内核页表
+  p->k_pagetable = proc_kvminit();
+  if (p->k_pagetable == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  // 将内核栈映射到私有内核页表中
+  mappages(p->k_pagetable, p->kstack, PGSIZE, p->kstack_pa, PTE_R | PTE_W);
+
   return p;
+}
+
+// 新建处理内核页表释放辅助函数
+static void freekpgtbl(pagetable_t pagetable) {
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i]; // 获取页表项
+
+    if ((pte & PTE_V) == 0)
+      continue; // 无效页表项
+
+    if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+      uint64 child = PTE2PA(pte);
+      freekpgtbl((pagetable_t)child);
+      pagetable[i] = 0;
+    } else {
+      // 只清掉 PTE, 不去释放叶子项指向的物理页
+      pagetable[i] = 0;
+    }
+  }
+  // 释放页表本身
+  kfree((void *)pagetable);
 }
 
 // free a proc structure and the data hanging from it,
@@ -136,6 +170,9 @@ static void freeproc(struct proc *p) {
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  // 释放私有内核页表
+  if (p->k_pagetable) freekpgtbl(p->k_pagetable);
+  p->k_pagetable = 0;
 }
 
 // Create a user page table for a given process,
@@ -425,12 +462,22 @@ void scheduler(void) {
     for (p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if (p->state == RUNNABLE) {
+        // 切到某个进程前, 把 satp 切到该进程自己的内核页表
+        w_satp(MAKE_SATP(p->k_pagetable));
+        // 切换完成后执行 sfence_vma()
+        sfence_vma();
+
+
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
+
+        // 当没有进程运行, 或调度器自己在运行时, 再切回全局 kernel_pagetable
+        w_satp(MAKE_SATP(kernel_pagetable));
+        sfence_vma();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
